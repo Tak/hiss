@@ -1,3 +1,5 @@
+require 'prime'
+
 RSpec.describe Hiss do
   it "has a version number" do
     expect(Hiss::VERSION).not_to be nil
@@ -46,7 +48,7 @@ RSpec.describe Hiss do
     prime = 1613
     expected_y_values = [1494, 329, 965, 176, 1188, 775]
 
-    pieces, _ = Hiss::Hiss.generate_points(secret, numberOfPieces, coefficients, prime)
+    pieces = Hiss::Hiss.generate_points(secret, numberOfPieces, coefficients, prime)
 
     expect(pieces.length).to eq(6)
     pieces.each_with_index { |piece, index|
@@ -55,24 +57,49 @@ RSpec.describe Hiss do
     }
   end
 
+  it "generates expected point buffer given known inputs" do
+    # https://en.wikipedia.org/wiki/Shamir%27s_Secret_Sharing
+    secret = '1234'.unpack(Hiss::PACK_FORMAT)
+    numberOfPieces = 6
+    requiredPieces = 3
+    prime = 1613
+
+    pieces = Hiss::Hiss.generate_buffer(secret, numberOfPieces, requiredPieces, prime)
+
+    expect(pieces.length).to eq(numberOfPieces)
+    calculatedSecret = Hiss::Hiss.interpolate_buffer(pieces, prime)
+    expect(calculatedSecret).to eq(secret)
+  end
+
   def n_random_items_from(array, n)
     indices = (0..(array.length - 1)).collect().to_a()
     (1..n).collect do
-      array[indices.slice!(Random.rand() % indices.length)]
+      array[indices.slice!(Random.rand(indices.length))]
     end
   end
 
-  it "successfully roundtrips" do
+  it "successfully roundtrips a single value" do
     secret = Random.rand(2 ** 16)
+    numberOfPieces = 8
+    requiredPiecesToDecode = 5
+    prime = Prime::detect{ |n| n > secret }
+
+    pieces = Hiss::Hiss.generate_points(secret, numberOfPieces, Hiss::Hiss.generate_coefficients(requiredPiecesToDecode, prime), prime)
+
+    pieces.each { |piece| expect(piece[1]).to be <= prime }
+    calculatedSecret = Hiss::Hiss.interpolate_secret(n_random_items_from(pieces, requiredPiecesToDecode), prime)
+    expect(calculatedSecret).to eq(secret)
+  end
+
+  it "successfully roundtrips a buffer" do
+    secret = (1..32).collect{ Random.rand(256) }
     numberOfPieces = 8
     requiredPiecesToDecode = 5
     hiss = Hiss::Hiss.new(secret, numberOfPieces, requiredPiecesToDecode)
 
     pieces, prime = hiss.generate()
-    expect(prime).to be >= secret
 
-    pieces.each { |piece| expect(piece[1]).to be <= prime }
-    calculatedSecret = Hiss::Hiss.interpolate_secret(n_random_items_from(pieces, requiredPiecesToDecode), prime)
+    calculatedSecret = Hiss::Hiss.interpolate_buffer(n_random_items_from(pieces, requiredPiecesToDecode), prime)
     expect(calculatedSecret).to eq(secret)
   end
 end

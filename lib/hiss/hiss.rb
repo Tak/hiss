@@ -5,13 +5,15 @@
 require 'prime'
 
 module Hiss
+  PACK_FORMAT = 'C*'
+
   class Hiss
+
     def initialize(secret, totalNumberOfPieces, requiredPiecesToDecode)
       @secret = secret
       @piecesCount = totalNumberOfPieces
       @requiredPiecesCount = requiredPiecesToDecode
-      # FIXME: Don't just take the next largest prime
-      @prime = Prime.detect{ |n| n > secret }
+      @prime = 7919 # Chosen by random dice roll ;-)
     end
 
     # Generate (requiredPiecesCount - 1) polynomial coefficients less than prime
@@ -19,6 +21,16 @@ module Hiss
       (1..(requiredPiecesCount - 1)).collect do
         Random.rand(prime).to_i
       end
+    end
+
+    def self.generate_buffer(secret, piecesCount, requiredPiecesCount, prime)
+      pointBuffers = (1..piecesCount).collect{ |index| [index, []] }
+      secret.each do |byte|
+        generate_points(byte, piecesCount, generate_coefficients(requiredPiecesCount, prime), prime).each { |point|
+          pointBuffers[point[0] - 1][1] << point[1]
+        }
+      end
+      return pointBuffers
     end
 
     # Generate the first piecesCount points on the polynomial described by coefficients
@@ -31,11 +43,11 @@ module Hiss
         }
         [x, sum % prime]
       }
-      return pieces.drop(1), prime
+      return pieces.drop(1)
     end
 
     def generate
-      Hiss.generate_points(@secret, @piecesCount, Hiss.generate_coefficients(@requiredPiecesCount, @prime), @prime)
+      return Hiss.generate_buffer(@secret, @piecesCount, @requiredPiecesCount, @prime), @prime
     end
 
     def self.modular_multiplicative_inverse(a, z)
@@ -61,6 +73,13 @@ module Hiss
 
     def self.multiply_all(numbers)
       numbers.inject(1){ |total, number| total * number }
+    end
+
+    def self.interpolate_buffer(points, prime)
+      pointCount = points[0][1].length
+      (1..pointCount).collect do |index|
+        interpolate_secret(points.collect{ |point| [point[0], point[1][index - 1]]}, prime)
+      end
     end
 
     # Solve for the 0th-order term of the lagrange polynomial partially described by points
