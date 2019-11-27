@@ -1,5 +1,6 @@
 #!/usr/bin/ruby --
 # for-fun implementation of Shamir's Secret Sharing
+# https://en.wikipedia.org/wiki/Shamir%27s_Secret_Sharing
 
 require 'prime'
 
@@ -9,33 +10,36 @@ module Hiss
       @secret = secret
       @piecesCount = totalNumberOfPieces
       @requiredPiecesCount = requiredPiecesToDecode
-      @prime = Prime.take(Random.rand(1000) + 20).last
+      # FIXME: Don't just take the next largest prime
+      @prime = Prime.detect{ |n| n > secret }
     end
 
-    def self.generate_coefficients(secret, requiredPiecesCount, prime)
-      coefficients = [secret]
-      (1..(requiredPiecesCount - 1)).each do
-        coefficients << Random.rand(prime).to_i
+    # Generate (requiredPiecesCount - 1) polynomial coefficients less than prime
+    def self.generate_coefficients(requiredPiecesCount, prime)
+      (1..(requiredPiecesCount - 1)).collect do
+        Random.rand(prime).to_i
       end
-      return coefficients
     end
 
+    # Generate the first piecesCount points on the polynomial described by coefficients
+    # (coefficients[0] * (x ** 0)) + ...
     def self.generate_points(secret, piecesCount, coefficients, prime)
-      pieces = (1..piecesCount).collect {|index|
-        sum = 0
-        coefficients.each_with_index { |coefficient, order|
-          sum += coefficient * (index ** order)
+      pieces = (0..piecesCount).collect {|x|
+        sum = secret
+        coefficients.each_with_index { |coefficient, index|
+          sum += coefficient * (x ** (index + 1))
         }
-        [index, sum % prime]
+        [x, sum % prime]
       }
-      return [0, secret] + pieces, prime
+      return pieces.drop(1), prime
     end
 
     def generate
-      Hiss.generate_points(@secret, @piecesCount, Hiss.generate_coefficients(@secret, @requiredPiecesCount, @prime), @prime)
+      Hiss.generate_points(@secret, @piecesCount, Hiss.generate_coefficients(@requiredPiecesCount, @prime), @prime)
     end
 
-    def self.find_greatest_common_denominator(a, z)
+    def self.modular_multiplicative_inverse(a, z)
+      # https://en.wikipedia.org/wiki/Extended_Euclidean_algorithm
       x = 0
       last_x = 1
       y = 1
@@ -44,14 +48,14 @@ module Hiss
       while z != 0
         integer_quotient = a.div(z)
         a, z = z, a % z
-        x, last_x = last_x - (integer_quotient * x), x
-        y, last_y = last_y - (integer_quotient * y), y
+        last_x, x = x, last_x - (integer_quotient * x)
+        last_y, y = y, last_y - (integer_quotient * y)
       end
       return last_x, last_y
     end
 
     def self.divide_and_apply_modulus(numerator, denominator, prime)
-      inverse_denominator, _ = find_greatest_common_denominator(denominator, prime)
+      inverse_denominator, _ = modular_multiplicative_inverse(denominator, prime)
       return numerator * inverse_denominator
     end
 
@@ -59,27 +63,25 @@ module Hiss
       numbers.inject(1){ |total, number| total * number }
     end
 
+    # Solve for the 0th-order term of the lagrange polynomial partially described by points
+    # in the prime finite field for prime
     def self.interpolate_secret(points, prime)
-      puts("Interpolating from #{points} and #{prime}")
-      x_coefficients = points.collect{ |point| point[0] }
-      y_coefficients = points.collect{ |point| point[1] }
+      x_values = points.collect{ |point| point[0] }
+      y_values = points.collect{ |point| point[1] }
       numerators = []
       denominators = []
-      x_coefficients.each_index do |index|
-        other_x_coefficients = x_coefficients.clone()
-        this_x = other_x_coefficients.slice!(index)
-        numerators << multiply_all(other_x_coefficients.collect{ |x| 0 - x }) # Special-cased for 0
-        denominators << multiply_all(other_x_coefficients.collect{ |x| this_x - x })
+      x_values.each_index do |index|
+        other_x_values = x_values.clone()
+        this_x = other_x_values.slice!(index)
+        numerators << multiply_all(other_x_values.collect{ |x| 0 - x })
+        denominators << multiply_all(other_x_values.collect{ |x| this_x - x })
       end
 
-      puts("numerators: #{numerators}")
-      puts("denominators: #{denominators}")
-
       denominator = multiply_all(denominators)
-      puts("denominator: #{denominator}")
+
       numerator = 0
-      x_coefficients.each_index do |index|
-        numerator += divide_and_apply_modulus(numerators[index] * denominator * y_coefficients[index] % prime, denominators[index], prime)
+      x_values.each_index do |index|
+        numerator += divide_and_apply_modulus(numerators[index] * denominator * y_values[index] % prime, denominators[index], prime)
       end
       return (divide_and_apply_modulus(numerator, denominator, prime) + prime) % prime
     end
