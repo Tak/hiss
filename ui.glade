@@ -139,7 +139,6 @@
                 <child>
                   <object class="GtkProgressBar" id="progressText">
                     <property name="visible">True</property>
-                    <property name="sensitive">False</property>
                     <property name="can_focus">False</property>
                   </object>
                   <packing>
@@ -438,7 +437,6 @@
                 <child>
                   <object class="GtkProgressBar" id="progressFile">
                     <property name="visible">True</property>
-                    <property name="sensitive">False</property>
                     <property name="can_focus">False</property>
                   </object>
                   <packing>

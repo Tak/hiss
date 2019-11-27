@@ -43,12 +43,23 @@ module Hiss
       end
     end
 
+    def self.flush_events
+      while Gtk.events_pending?
+        Gtk.main_iteration()
+      end
+    end
+
     def ui_generate_text
       secret = @builder['entrySecretText'].text
       totalPieces = @builder['spinnerTotalPiecesText'].value
       requiredPieces = @builder['spinnerRequiredPiecesText'].value
+      progressBar = @builder['progressText']
+      totalProgress = secret.length
 
-      pieces, prime = Hiss.new(secret, totalPieces, requiredPieces).generate()
+      pieces, prime = Hiss.new(secret, totalPieces, requiredPieces).generate() do |progress|
+        progressBar.fraction = progress.to_f() / totalProgress
+        UI.flush_events()
+      end
       @builder['labelPrimeText'].text = prime.to_s()
       grid = @builder['gridResultText']
       UI.clear_grid(grid)
@@ -57,6 +68,7 @@ module Hiss
         grid.attach(get_selectable_label(piece[0].to_s(), 1.0), 0, index, 1, 1)
         grid.attach(get_selectable_label(Base64.urlsafe_encode64(piece[1]), 0.25), 1, index, 1, 1)
       end
+      progressBar.fraction = 1.0
       @builder['frameResultsText'].show_all()
     end
 
@@ -109,6 +121,7 @@ module Hiss
       piecesCount = @builder['spinnerReconstructTextPieces'].value
       grid = @builder['gridReconstructTextPieces']
       prime = @builder['entryReconstructTextPrimeModulator'].text.strip().to_i()
+      progressBar = @builder['progressReconstructText']
 
       pieces = (1..piecesCount).collect do |index|
         [
@@ -116,8 +129,13 @@ module Hiss
             Base64.urlsafe_decode64(grid.get_child_at(1, index - 1).text.strip())
         ]
       end
+      totalProgress = pieces[0][1].length
 
-      secret = Hiss.interpolate_string(pieces, prime)
+      secret = Hiss.interpolate_string(pieces, prime) do |progress|
+        progressBar.fraction = progress.to_f() / totalProgress
+        UI.flush_events()
+      end
+      progressBar.fraction = 1.0
       @builder['labelReconstructTextSecret'].text = secret
       @builder['boxReconstructTextSecret'].show_all()
     end
@@ -143,11 +161,18 @@ module Hiss
       prime = 7919
       totalPieces = @builder['spinnerTotalPiecesFile'].value
       requiredPieces = @builder['spinnerRequiredPiecesFile'].value
+      progressBar = @builder['progressFile']
 
       begin
         secretFile = @builder['buttonChooseSecretFile'].file
         parent = secretFile.parent
-        Hiss.generate_file(secretFile.path, totalPieces, requiredPieces, prime)
+        totalProgress = Pathname.new(secretFile.path).size
+
+        Hiss.generate_file(secretFile.path, totalPieces, requiredPieces, prime) do |progress|
+          progressBar.fraction = progress.to_f() / totalProgress
+          UI.flush_events()
+        end
+        progressBar.fraction = 1.0
 
         # Done generating, show results
         @fileResultPath = parent.uri
@@ -207,9 +232,16 @@ module Hiss
       begin
         destination = @builder['chooserReconstructFileDestination'].file
         pieceFiles = @builder['chooserReconstructFileChoosePieces'].files
+        progressBar = @builder['progressReconstructFile']
         pieces = pieceFiles.collect { |file| file.path }
+        totalProgress = Pathname.new(pieces[0]).size
 
-        Hiss.interpolate_file(pieces, destination.path)
+        Hiss.interpolate_file(pieces, destination.path) do |progress|
+          progressBar.fraction = progress.to_f() / totalProgress
+          UI.flush_events()
+        end
+        progressBar.fraction = 1.0
+
         @builder['frameReconstructFileResults'].show_all()
       ensure
         destination.unref() if destination
