@@ -145,6 +145,32 @@ RSpec.describe Hiss do
     expect(calculatedSecret).to eq(secret)
   end
 
+  it "successfully roundtrips a file" do
+    dataDirectory = Pathname.new(__FILE__).parent.join('testData')
+    input = dataDirectory.join('testInput').to_s()
+    outputPath = dataDirectory.join('testOutput')
+    totalPieces = 8
+    requiredPieces = 5
+    prime = 5717
+
+    outputPath.delete() if outputPath.exist?
+    expect(outputPath.exist?).to eq(false)
+
+    pieces = Hiss::Hiss.generate_file(input, totalPieces, requiredPieces, prime)
+    pieces.each{ |piece| expect(Pathname.new(piece).exist?).to eq(true) }
+
+    Hiss::Hiss.interpolate_file(n_random_items_from(pieces, requiredPieces), outputPath.to_s())
+    expect(outputPath.exist?).to eq(true)
+
+    inputData = nil
+    outputData = nil
+
+    File.open(input){ |file| inputData = file.read() }
+    File.open(outputPath.to_s()){ |file| outputData = file.read() }
+
+    expect(outputData).to eq(inputData)
+  end
+
   it "reports progress for buffers" do
     secret = (1..32).collect{ Random.rand(256) }
     progressCallbacks = 0
@@ -157,6 +183,21 @@ RSpec.describe Hiss do
     progressCallbacks = 0
     roundtrip_string(secret){ progressCallbacks+=1 }
     expect(progressCallbacks).to eq(secret.length * 2)
+  end
+
+  it "reports progress for files" do
+    dataDirectory = Pathname.new(__FILE__).parent.join('testData')
+    inputPath = dataDirectory.join('testInput')
+    outputPath = dataDirectory.join('testOutput')
+    totalPieces = 5
+    requiredPieces = 8
+    prime = 5717
+    progressCallbacks = 0
+
+    pieces = Hiss::Hiss.generate_file(inputPath.to_s(), totalPieces, requiredPieces, prime){ progressCallbacks += 1 }
+    Hiss::Hiss.interpolate_file(pieces, outputPath.to_s()){ progressCallbacks += 1 }
+
+    expect(progressCallbacks).to eq(inputPath.size * 2)
   end
 
   it "validates single inputs" do
@@ -183,6 +224,25 @@ RSpec.describe Hiss do
     ]
     testData.each{ |testDatum|
       expect{ Hiss::Hiss.interpolate_buffer(testDatum, prime) }.to raise_exception(RuntimeError)
+    }
+  end
+
+  it "validates files" do
+    dataDirectory = Pathname.new(__FILE__).parent.join('testData')
+    input = dataDirectory.join('testInput').to_s()
+    output = dataDirectory.join('testOutput').to_s()
+    totalPieces = 5
+    requiredPieces = 8
+    prime = 5717
+
+    pieces = Hiss::Hiss.generate_file(input, totalPieces, requiredPieces, prime)
+
+    testData = [
+        pieces + [dataDirectory.join('testInput-differingPrime.shard')], # Differing prime
+        pieces + [pieces[0]]                                             # Duplicated index
+    ]
+    testData.each{ |testDatum|
+      expect{ Hiss::Hiss.interpolate_file(testDatum, output) }.to raise_exception(RuntimeError)
     }
   end
 end
