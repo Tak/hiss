@@ -5,9 +5,9 @@ require 'prime'
 
 module Hiss
   PACK_FORMAT = 'C*' # input is a byte stream
+  PIECE_PACK_FORMAT = 'n*' # output values are integers in 0 <= n < @prime
 
   class Hiss
-    PIECE_PACK_FORMAT = 'S*' # output values are integers in 0 <= n < @prime
     BUFFER_SIZE = 8192
 
     def initialize(secret, totalNumberOfPieces, requiredPiecesToDecode)
@@ -70,6 +70,7 @@ module Hiss
               end
               outputStream.write(generatedBuffer[1])                 # raw data
             end
+            firstChunk = false
           end
         end
       ensure
@@ -146,6 +147,8 @@ module Hiss
         header = piece.read(BUFFER_SIZE).split("\n", 3)
         indices << header[0].strip().to_i()
         primes << header[1].strip().to_i()
+        trailing_buffer = piece.read(BUFFER_SIZE - header[2].length)
+        header[2] += trailing_buffer if trailing_buffer
         buffers << header[2]
       end
 
