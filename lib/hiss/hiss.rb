@@ -8,6 +8,7 @@ module Hiss
 
   class Hiss
     PIECE_PACK_FORMAT = 'S*' # output values are integers in 0 <= n < @prime
+    BUFFER_SIZE = 8192
 
     def initialize(secret, totalNumberOfPieces, requiredPiecesToDecode)
       @secret = secret
@@ -26,6 +27,54 @@ module Hiss
       (2..requiredPiecesCount).collect do
         Random.rand(prime).to_i
       end
+    end
+
+    # Process a secret file and generate an output file per piece
+    # Format:
+    # pieceIndex\n (text)
+    # prime\n      (text)
+    # raw binary data
+    def self.generate_file(secretFile, totalPieces, requiredPieces, prime)
+      pieceNames = nil
+      pieceFiles = nil
+      secretFilePath = Pathname.new(secretFile)
+      chunks = secretFilePath.basename.to_s().split(/\./)
+      basename = if chunks.length == 1
+                   chunks[0]
+                 else
+                   chunks.slice!(-1)
+                   chunks.join('.')
+                 end
+      parent = secretFilePath.parent
+
+      begin
+        pieceNames = (1..totalPieces).collect do |index|
+          parent.join("#{basename}-#{index}.shard").to_s()
+        end
+        pieceFiles = pieceNames.collect { |file| File.open(file, 'wb')}
+
+        File.open(secretFile, 'rb') do |secretStream|
+          firstChunk = true
+          buffer = ''
+
+          while secretStream.read(BUFFER_SIZE, buffer)
+            # TODO: Progress
+
+            Hiss.generate_string(buffer, totalPieces, requiredPieces, prime).each_with_index do |generatedBuffer, index|
+              outputStream = pieceFiles[index]
+              if firstChunk
+                outputStream.write("#{generatedBuffer[0].to_s()}\n") # index
+                outputStream.write("#{prime.to_s()}\n")              # prime
+              end
+              outputStream.write(generatedBuffer[1])                 # raw data
+            end
+          end
+        end
+      ensure
+        pieceFiles.each { |file| file.close() } if pieceFiles
+      end
+
+      return pieceNames
     end
 
     # Generate the first piecesCount values for the polynomial for each byte in secret, and pack them into a string
@@ -82,6 +131,45 @@ module Hiss
 
     def self.multiply_all(numbers)
       numbers.inject(1){ |total, number| total * number }
+    end
+
+    def self.read_headers(pieces)
+      indices = []
+      primes = []
+      buffers = []
+      pieces.each do |piece|
+        header = piece.read(BUFFER_SIZE).split("\n", 3)
+        indices << header[0].strip().to_i()
+        primes << header[1].strip().to_i()
+        buffers << header[2]
+      end
+
+      validate_header(indices, primes, buffers)
+
+      return indices, primes, buffers
+    end
+
+    def self.validate_header(indices, primes, buffers)
+      # TODO
+    end
+
+    # Solve for each value encoded in a set of files and write a file built from the solution
+    # See generate_file for format
+    def self.interpolate_file(pieceFiles, destinationFile)
+      File.open(destinationFile, 'wb') do |destination|
+        pieces = pieceFiles.collect{ |file| File.open(file, 'rb') }
+        begin
+          indices, primes, buffers = read_headers(pieces)
+
+          while buffers.all?{ |buffer| buffer }
+            points = (1..buffers.length).collect{ |index| [indices[index - 1], buffers[index - 1]]}
+            destination.write(interpolate_string(points, primes[0]))
+            pieces.each_index{ |index| buffers[index] = pieces[index].read(BUFFER_SIZE, buffers[index]) }
+          end
+        ensure
+          pieces.each{ |file| file.close() }
+        end
+      end
     end
 
     # Solve for each value encoded in strings and return a string built from the solutions

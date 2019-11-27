@@ -3,8 +3,6 @@ require 'base64'
 
 module Hiss
   class UI
-    BUFFER_SIZE = 8192
-
     def initialize
       @builder = Gtk::Builder.new()
       @builder.add_from_file('ui.glade')
@@ -17,6 +15,12 @@ module Hiss
       @builder['frameResultsFile'].hide()
       @builder['frameReconstructFileResults'].hide()
     end
+
+    def ui_quit
+      Gtk.main_quit()
+    end
+
+    ### Generate Text ###
 
     def ui_validate_text
       secret = @builder['entrySecretText'].text
@@ -55,6 +59,8 @@ module Hiss
       end
       @builder['frameResultsText'].show_all()
     end
+
+    ### Reconstruct Text ###
 
     def self.get_index_entry
       entry = Gtk::Entry.new()
@@ -116,6 +122,8 @@ module Hiss
       @builder['boxReconstructTextSecret'].show_all()
     end
 
+    ### Generate File ###
+
     def ui_validate_file
       valid = true
       file = @builder['buttonChooseSecretFile'].file
@@ -131,79 +139,30 @@ module Hiss
 
     def ui_generate_file
       secretFile = nil
+      parent = nil
+      prime = 7919
       totalPieces = @builder['spinnerTotalPiecesFile'].value
       requiredPieces = @builder['spinnerRequiredPiecesFile'].value
-      prime = 7919
-      pieceFiles = nil
 
       begin
         secretFile = @builder['buttonChooseSecretFile'].file
         parent = secretFile.parent
-        parentPath = parent.path
-        chunks = secretFile.basename.split(/\./)
-        basename = if chunks.length == 1
-                     chunks[0]
-                   else
-                     chunks.slice!(-1)
-                     chunks.join('.')
-                   end
-        pieceFiles = (1..totalPieces).collect do |index|
-          path = Pathname.new(parentPath).join("#{basename}-#{index}.shard").to_s()
-          file = Gio::File.new_for_path(path)
-          [file, file.replace(nil, false, Gio::FileCreateFlags::NONE, nil)]
-        end
-        secretStream = secretFile.read()
-        firstChunk = true
-        while true
-          # TODO: Progress
-          buffer = secretStream.read(BUFFER_SIZE)
-          break if (buffer.length == 0)
-
-          Hiss.generate_string(buffer, totalPieces, requiredPieces, prime).each_with_index do |generatedBuffer, index|
-            outputStream = pieceFiles[index][1]
-            if firstChunk
-              outputStream.write("#{generatedBuffer[0].to_s()}\n") # index
-              outputStream.write("#{prime.to_s()}\n")              # prime
-            end
-            outputStream.write(generatedBuffer[1])                 # raw data
-          end
-        end
+        Hiss.generate_file(secretFile.path, totalPieces, requiredPieces, prime)
 
         # Done generating, show results
-        @fileResultPath = parentPath
+        @fileResultPath = parent.uri
         @builder['frameResultsFile'].show_all()
-      rescue => error
-        # TODO: error output
-        puts error
-        raise
       ensure
-        # Close/unref file handles
-        parent.unref() if parent
-        if secretStream
-          secretStream.close()
-          secretStream.unref()
-        end
         secretFile.unref() if secretFile
-        pieceFiles.each do |file|
-          if file[1]
-            file[1].close()
-            file[1].unref()
-          end
-          file[0].unref() if file[0]
-        end
+        parent.unref() if parent
       end
     end
 
     def ui_open_file
-      file = @builder['buttonChooseSecretFile'].file
-      parent = file.parent
-      begin
-        Gio.app_info_launch_default_for_uri(parent.uri)
-      ensure
-        file.unref()
-        parent.unref()
-      end
+      Gio.app_info_launch_default_for_uri(@fileResultPath)
     end
+
+    ### Reconstruct File ###
 
     def ui_open_reconstruct_file
       Gio.app_info_launch_default_for_uri(@builder['chooserReconstructFileDestination'].uri)
@@ -223,9 +182,7 @@ module Hiss
         @builder['buttonReconstructFileChoosePieces'].label = "(#{pieces.length} files)" if pieces && pieces.length > 0
       ensure
         destination.unref() if destination
-        if pieces
-          pieces.each{ |piece| piece.unref() if piece }
-        end
+        pieces.each{ |piece| piece.unref() if piece } if pieces
       end
     end
 
@@ -248,56 +205,16 @@ module Hiss
       pieces = nil
 
       begin
-        destinationFile = @builder['chooserReconstructFileDestination'].file
-        destination = [destinationFile, destinationFile.replace(nil, false, Gio::FileCreateFlags::NONE, nil)]
-        pieces = @builder['chooserReconstructFileChoosePieces'].files.collect do |file|
-          [file, file.read()]
-        end
+        destination = @builder['chooserReconstructFileDestination'].file
+        pieceFiles = @builder['chooserReconstructFileChoosePieces'].files
+        pieces = pieceFiles.collect { |file| file.path }
 
-        # read header
-        indices = []
-        primes = []
-        buffers = []
-        pieces.each do |piece|
-          header = piece[1].read(BUFFER_SIZE).split("\n", 3)
-          indices << header[0].strip().to_i()
-          primes << header[1].strip().to_i()
-          buffers << header[2]
-        end
-
-        # TODO: header validation
-
-        # Fill the remaining portion of the trailing buffer
-        pieces.each_with_index do |piece, index|
-          buffers[index] += piece[1].read(BUFFER_SIZE - buffers[index].length)
-        end
-
-        while buffers.none?{ |buffer| buffer.length == 0 }
-          points = (1..buffers.length).collect{ |index| [indices[index - 1], buffers[index - 1]]}
-          destination[1].write(Hiss.interpolate_string(points, primes[0]))
-          buffers = pieces.collect{ |piece| piece[1].read(BUFFER_SIZE) }
-        end
+        Hiss.interpolate_file(pieces, destination.path)
         @builder['frameReconstructFileResults'].show_all()
       ensure
-        if destination[1]
-          destination[1].close()
-          destination[1].unref()
-        end
-        destination[0].unref() if destination[0]
-        if pieces
-          pieces.each do |piece|
-            if piece[1]
-              piece[1].close()
-              piece[1].unref()
-            end
-            piece[0].unref() if piece
-          end
-        end
+        destination.unref() if destination
+        pieceFiles.each { |piece| piece.unref() } if pieceFiles
       end
-    end
-
-    def ui_quit
-      Gtk.main_quit()
     end
   end
 end
