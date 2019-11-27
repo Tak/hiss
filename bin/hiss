@@ -1,0 +1,6 @@
+#!/usr/bin/env ruby
+
+require 'hiss'
+
+hiss = Hiss::Hiss.new(1234, 6, 3)
+puts(hiss.generate_points())
