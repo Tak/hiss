@@ -71,6 +71,20 @@ RSpec.describe Hiss do
     expect(calculatedSecret).to eq(secret)
   end
 
+  it "generates expected string given known inputs" do
+    # https://en.wikipedia.org/wiki/Shamir%27s_Secret_Sharing
+    secret = '1234'
+    numberOfPieces = 6
+    requiredPieces = 3
+    prime = 1613
+
+    pieces = Hiss::Hiss.generate_string(secret, numberOfPieces, requiredPieces, prime)
+
+    expect(pieces.length).to eq(numberOfPieces)
+    calculatedSecret = Hiss::Hiss.interpolate_string(pieces, prime)
+    expect(calculatedSecret).to eq(secret)
+  end
+
   def n_random_items_from(array, n)
     indices = (0..(array.length - 1)).collect().to_a()
     (1..n).collect do
@@ -78,7 +92,7 @@ RSpec.describe Hiss do
     end
   end
 
-  it "successfully roundtrips a single value" do
+  it "successfully roundtrips a single random value" do
     secret = Random.rand(2 ** 16)
     numberOfPieces = 8
     requiredPiecesToDecode = 5
@@ -91,15 +105,27 @@ RSpec.describe Hiss do
     expect(calculatedSecret).to eq(secret)
   end
 
-  it "successfully roundtrips a buffer" do
+  it "successfully roundtrips a random buffer" do
     secret = (1..32).collect{ Random.rand(256) }
     numberOfPieces = 8
     requiredPiecesToDecode = 5
-    hiss = Hiss::Hiss.new(secret, numberOfPieces, requiredPiecesToDecode)
+    prime = 5717
 
-    pieces, prime = hiss.generate()
+    pieces = Hiss::Hiss.generate_buffer(secret, numberOfPieces, requiredPiecesToDecode, prime)
 
     calculatedSecret = Hiss::Hiss.interpolate_buffer(n_random_items_from(pieces, requiredPiecesToDecode), prime)
+    expect(calculatedSecret).to eq(secret)
+  end
+
+  it "successfully roundtrips a random string" do
+    secret = (1..32).collect{ Random.rand(256) }.pack(Hiss::PACK_FORMAT)
+    numberOfPieces = 8
+    requiredPiecesToDecode = 5
+
+    hiss = Hiss::Hiss.new(secret, numberOfPieces, requiredPiecesToDecode)
+    pieces, prime = hiss.generate()
+
+    calculatedSecret = Hiss::Hiss.interpolate_string(n_random_items_from(pieces, requiredPiecesToDecode), prime)
     expect(calculatedSecret).to eq(secret)
   end
 end

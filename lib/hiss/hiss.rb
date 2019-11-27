@@ -1,13 +1,13 @@
-#!/usr/bin/ruby --
 # for-fun implementation of Shamir's Secret Sharing
 # https://en.wikipedia.org/wiki/Shamir%27s_Secret_Sharing
 
 require 'prime'
 
 module Hiss
-  PACK_FORMAT = 'C*'
+  PACK_FORMAT = 'C*' # input is a byte stream
 
   class Hiss
+    PIECE_PACK_FORMAT = 'S*' # output values are integers in 0 <= n < @prime
 
     def initialize(secret, totalNumberOfPieces, requiredPiecesToDecode)
       @secret = secret
@@ -16,13 +16,26 @@ module Hiss
       @prime = 7919 # Chosen by random dice roll ;-)
     end
 
+    # Return @piecesCount [pieceIndex, string] pairs and @prime
+    def generate
+      return Hiss.generate_string(@secret, @piecesCount, @requiredPiecesCount, @prime), @prime
+    end
+
     # Generate (requiredPiecesCount - 1) polynomial coefficients less than prime
     def self.generate_coefficients(requiredPiecesCount, prime)
-      (1..(requiredPiecesCount - 1)).collect do
+      (2..requiredPiecesCount).collect do
         Random.rand(prime).to_i
       end
     end
 
+    # Generate the first piecesCount values for the polynomial for each byte in secret, and pack them into a string
+    def self.generate_string(secret, piecesCount, requiredPiecesCount, prime)
+      generate_buffer(secret.unpack(PACK_FORMAT), piecesCount, requiredPiecesCount, prime).collect do |buffer|
+        [buffer[0], buffer[1].pack(PIECE_PACK_FORMAT)]
+      end
+    end
+
+    # Generate the first piecesCount values for the polynomial for each byte in secret
     def self.generate_buffer(secret, piecesCount, requiredPiecesCount, prime)
       pointBuffers = (1..piecesCount).collect{ |index| [index, []] }
       secret.each do |byte|
@@ -44,10 +57,6 @@ module Hiss
         [x, sum % prime]
       }
       return pieces.drop(1)
-    end
-
-    def generate
-      return Hiss.generate_buffer(@secret, @piecesCount, @requiredPiecesCount, @prime), @prime
     end
 
     def self.modular_multiplicative_inverse(a, z)
@@ -75,6 +84,15 @@ module Hiss
       numbers.inject(1){ |total, number| total * number }
     end
 
+    # Solve for each value encoded in strings and return a string built from the solutions
+    def self.interpolate_string(strings, prime)
+      pointBuffers = strings.collect do |string|
+        [string[0], string[1].unpack(PIECE_PACK_FORMAT)]
+      end
+      return interpolate_buffer(pointBuffers, prime).pack(PACK_FORMAT)
+    end
+
+    # Solve for each set of points in points and return an ordered array of solutions
     def self.interpolate_buffer(points, prime)
       pointCount = points[0][1].length
       (1..pointCount).collect do |index|
