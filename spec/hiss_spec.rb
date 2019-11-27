@@ -105,27 +105,57 @@ RSpec.describe Hiss do
     expect(calculatedSecret).to eq(secret)
   end
 
-  it "successfully roundtrips a random buffer" do
-    secret = (1..32).collect{ Random.rand(256) }
+  def roundtrip_buffer(secret)
     numberOfPieces = 8
     requiredPiecesToDecode = 5
     prime = 5717
 
-    pieces = Hiss::Hiss.generate_buffer(secret, numberOfPieces, requiredPiecesToDecode, prime)
+    pieces = Hiss::Hiss.generate_buffer(secret, numberOfPieces, requiredPiecesToDecode, prime) do |progress|
+      yield progress if block_given?
+    end
 
-    calculatedSecret = Hiss::Hiss.interpolate_buffer(n_random_items_from(pieces, requiredPiecesToDecode), prime)
+    return Hiss::Hiss.interpolate_buffer(n_random_items_from(pieces, requiredPiecesToDecode), prime) do |progress|
+      yield progress if block_given?
+    end
+  end
+
+  it "successfully roundtrips a random buffer" do
+    secret = (1..32).collect{ Random.rand(256) }
+    calculatedSecret = roundtrip_buffer(secret)
     expect(calculatedSecret).to eq(secret)
   end
 
-  it "successfully roundtrips a random string" do
-    secret = (1..32).collect{ Random.rand(256) }.pack(Hiss::PACK_FORMAT)
+  def roundtrip_string(secret)
     numberOfPieces = 8
     requiredPiecesToDecode = 5
 
     hiss = Hiss::Hiss.new(secret, numberOfPieces, requiredPiecesToDecode)
-    pieces, prime = hiss.generate()
+    pieces, prime = hiss.generate() do |progress|
+      yield progress if block_given?
+    end
 
-    calculatedSecret = Hiss::Hiss.interpolate_string(n_random_items_from(pieces, requiredPiecesToDecode), prime)
+    return Hiss::Hiss.interpolate_string(n_random_items_from(pieces, requiredPiecesToDecode), prime) do |progress|
+      yield progress if block_given?
+    end
+  end
+
+  it "successfully roundtrips a random string" do
+    secret = (1..32).collect{ Random.rand(256) }.pack(Hiss::PACK_FORMAT)
+    calculatedSecret = roundtrip_string(secret)
     expect(calculatedSecret).to eq(secret)
+  end
+
+  it "reports progress for buffers" do
+    secret = (1..32).collect{ Random.rand(256) }
+    progressCallbacks = 0
+    roundtrip_buffer(secret){ progressCallbacks+=1 }
+    expect(progressCallbacks).to eq(secret.length * 2)
+  end
+
+  it "reports progress for strings" do
+    secret = (1..32).collect{ Random.rand(256) }.pack(Hiss::PACK_FORMAT)
+    progressCallbacks = 0
+    roundtrip_string(secret){ progressCallbacks+=1 }
+    expect(progressCallbacks).to eq(secret.length * 2)
   end
 end

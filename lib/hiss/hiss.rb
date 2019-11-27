@@ -19,7 +19,9 @@ module Hiss
 
     # Return @piecesCount [pieceIndex, string] pairs and @prime
     def generate
-      return Hiss.generate_string(@secret, @piecesCount, @requiredPiecesCount, @prime), @prime
+      return Hiss.generate_string(@secret, @piecesCount, @requiredPiecesCount, @prime) { |progress|
+        yield progress if block_given?
+      }, @prime
     end
 
     # Generate (requiredPiecesCount - 1) polynomial coefficients less than prime
@@ -58,9 +60,9 @@ module Hiss
           buffer = ''
 
           while secretStream.read(BUFFER_SIZE, buffer)
-            # TODO: Progress
-
-            Hiss.generate_string(buffer, totalPieces, requiredPieces, prime).each_with_index do |generatedBuffer, index|
+            Hiss.generate_string(buffer, totalPieces, requiredPieces, prime){ |progress|
+              yield progress if block_given?
+            }.each_with_index do |generatedBuffer, index|
               outputStream = pieceFiles[index]
               if firstChunk
                 outputStream.write("#{generatedBuffer[0].to_s()}\n") # index
@@ -79,7 +81,9 @@ module Hiss
 
     # Generate the first piecesCount values for the polynomial for each byte in secret, and pack them into a string
     def self.generate_string(secret, piecesCount, requiredPiecesCount, prime)
-      generate_buffer(secret.unpack(PACK_FORMAT), piecesCount, requiredPiecesCount, prime).collect do |buffer|
+      generate_buffer(secret.unpack(PACK_FORMAT), piecesCount, requiredPiecesCount, prime) { |progress|
+        yield progress if block_given?
+      }.collect do |buffer|
         [buffer[0], buffer[1].pack(PIECE_PACK_FORMAT)]
       end
     end
@@ -87,10 +91,11 @@ module Hiss
     # Generate the first piecesCount values for the polynomial for each byte in secret
     def self.generate_buffer(secret, piecesCount, requiredPiecesCount, prime)
       pointBuffers = (1..piecesCount).collect{ |index| [index, []] }
-      secret.each do |byte|
+      secret.each_with_index do |byte, byteIndex|
         generate_points(byte, piecesCount, generate_coefficients(requiredPiecesCount, prime), prime).each { |point|
           pointBuffers[point[0] - 1][1] << point[1]
         }
+        yield byteIndex if block_given?
       end
       return pointBuffers
     end
@@ -163,7 +168,9 @@ module Hiss
 
           while buffers.all?{ |buffer| buffer }
             points = (1..buffers.length).collect{ |index| [indices[index - 1], buffers[index - 1]]}
-            destination.write(interpolate_string(points, primes[0]))
+            destination.write(interpolate_string(points, primes[0]){ |progress|
+              yield progress if block_given?
+            })
             pieces.each_index{ |index| buffers[index] = pieces[index].read(BUFFER_SIZE, buffers[index]) }
           end
         ensure
@@ -177,13 +184,16 @@ module Hiss
       pointBuffers = strings.collect do |string|
         [string[0], string[1].unpack(PIECE_PACK_FORMAT)]
       end
-      return interpolate_buffer(pointBuffers, prime).pack(PACK_FORMAT)
+      return interpolate_buffer(pointBuffers, prime){ |progress|
+        yield progress if block_given?
+      }.pack(PACK_FORMAT)
     end
 
     # Solve for each set of points in points and return an ordered array of solutions
     def self.interpolate_buffer(points, prime)
       pointCount = points[0][1].length
       (1..pointCount).collect do |index|
+        yield index - 1 if block_given?
         interpolate_secret(points.collect{ |point| [point[0], point[1][index - 1]]}, prime)
       end
     end
