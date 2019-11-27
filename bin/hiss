@@ -2,5 +2,12 @@
 
 require 'hiss'
 
-hiss = Hiss::Hiss.new(1234, 6, 3)
-puts(hiss.generate_points())
+secret = 1234
+totalPieces = 6
+decodePieces = 3
+puts("Sharing secret #{secret} into #{totalPieces} pieces (#{decodePieces} required)")
+hiss = Hiss::Hiss.new(secret, totalPieces, decodePieces)
+points, prime = hiss.generate()
+puts(points)
+puts(prime)
+puts("Recovered secret: #{Hiss::Hiss.interpolate_secret(points[3..5], prime)}")
