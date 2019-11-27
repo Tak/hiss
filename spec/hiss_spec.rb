@@ -161,24 +161,28 @@ RSpec.describe Hiss do
     dataDirectory = Pathname.new(__FILE__).parent.join('testData')
     input = dataDirectory.join('testInput').to_s()
     outputPath = dataDirectory.join('testOutput')
+    output = outputPath.to_s()
     totalPieces = 8
     requiredPieces = 5
     prime = 5717
 
-    outputPath.delete() if outputPath.exist?
-    expect(outputPath.exist?).to eq(false)
+    # Because the shards preserve the original file path, we copy the input file to the expected output path
+    FileUtils.copy(input, output)
 
-    pieces = Hiss::Hiss.generate_file(input, totalPieces, requiredPieces, prime)
+    pieces = Hiss::Hiss.generate_file(output, totalPieces, requiredPieces, prime)
     pieces.each{ |piece| expect(Pathname.new(piece).exist?).to eq(true) }
 
-    Hiss::Hiss.interpolate_file(n_random_items_from(pieces, requiredPieces), outputPath.to_s())
+    outputPath.delete()
+    expect(outputPath.exist?).to eq(false)
+
+    Hiss::Hiss.interpolate_file(n_random_items_from(pieces, requiredPieces), dataDirectory)
     expect(outputPath.exist?).to eq(true)
 
     inputData = nil
     outputData = nil
 
     File.open(input){ |file| inputData = file.read() }
-    File.open(outputPath.to_s()){ |file| outputData = file.read() }
+    File.open(output){ |file| outputData = file.read() }
 
     expect(outputData).to eq(inputData)
   end
@@ -207,14 +211,19 @@ RSpec.describe Hiss do
     progressCallbacks = 0
     lastProgress = 0
 
-    pieces = Hiss::Hiss.generate_file(inputPath.to_s(), totalPieces, requiredPieces, prime) do |progress|
+    # Because the shards preserve the original file path, we copy the input file to the expected output path
+    FileUtils.copy(inputPath.to_s(), outputPath.to_s())
+
+    pieces = Hiss::Hiss.generate_file(outputPath.to_s(), totalPieces, requiredPieces, prime) do |progress|
       expect(progress).to be >= lastProgress
       progressCallbacks += 1
       lastProgress = progress
     end
 
+    outputPath.delete()
+
     lastProgress = 0
-    Hiss::Hiss.interpolate_file(pieces, outputPath.to_s()) do |progress|
+    Hiss::Hiss.interpolate_file(pieces, dataDirectory.to_s()) do |progress|
       expect(progress).to be >= lastProgress
       progressCallbacks += 1
       lastProgress = progress
@@ -261,8 +270,11 @@ RSpec.describe Hiss do
     pieces = Hiss::Hiss.generate_file(input, totalPieces, requiredPieces, prime)
 
     testData = [
-        pieces + [dataDirectory.join('testInput-differingPrime.shard')], # Differing prime
-        pieces + [pieces[0]]                                             # Duplicated index
+        pieces + [dataDirectory.join('testInput-differingPrime.shard')],    # Differing prime
+        pieces + [dataDirectory.join('testInput-differingVersion.shard')],  # Differing version
+        pieces + [dataDirectory.join('testInput-differingFilename.shard')], # Differing filename
+        pieces + [dataDirectory.join('testInput-invalidFilename.shard')],   # Invalid filename
+        pieces + [pieces[0]]                                                # Duplicated index
     ]
     testData.each{ |testDatum|
       expect{ Hiss::Hiss.interpolate_file(testDatum, output) }.to raise_exception(RuntimeError)

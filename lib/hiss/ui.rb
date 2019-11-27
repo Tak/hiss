@@ -190,7 +190,7 @@ module Hiss
     ### Reconstruct File ###
 
     def ui_open_reconstruct_file
-      Gio.app_info_launch_default_for_uri(@builder['chooserReconstructFileDestination'].uri)
+      Gio.app_info_launch_default_for_uri("file://#{@fileReconstructedPath}")
     end
 
     def ui_validate_reconstruct_file
@@ -199,11 +199,9 @@ module Hiss
       valid = false
 
       begin
-        destination = @builder['chooserReconstructFileDestination'].file
         pieces = @builder['chooserReconstructFileChoosePieces'].files
-        valid = true if destination && pieces && pieces.length > 2
+        valid = true if pieces && pieces.length > 2
         @builder['buttonReconstructFile'].sensitive = valid
-        @builder['buttonReconstructFileDestination'].label = destination.basename if destination
         @builder['buttonReconstructFileChoosePieces'].label = "(#{pieces.length} files)" if pieces && pieces.length > 0
       ensure
         destination.unref() if destination
@@ -218,25 +216,18 @@ module Hiss
       ui_validate_reconstruct_file()
     end
 
-    def ui_choose_destination_reconstruct_file
-      dialog = @builder['chooserReconstructFileDestination']
-      dialog.run()
-      dialog.hide()
-      ui_validate_reconstruct_file()
-    end
-
     def ui_reconstruct_file
       destination = nil
       pieces = nil
 
       begin
-        destination = @builder['chooserReconstructFileDestination'].file
         pieceFiles = @builder['chooserReconstructFileChoosePieces'].files
         progressBar = @builder['progressReconstructFile']
+        destination = pieceFiles[0].parent
         pieces = pieceFiles.collect { |file| file.path }
         totalProgress = Pathname.new(pieces[0]).size
 
-        Hiss.interpolate_file(pieces, destination.path) do |progress|
+        @fileReconstructedPath = Hiss.interpolate_file(pieces, destination.path) do |progress|
           progressBar.fraction = progress.to_f() / totalProgress
           UI.flush_events()
         end

@@ -9,6 +9,8 @@ module Hiss
 
   class Hiss
     BUFFER_SIZE = 8192
+    MAX_SECRET_FILENAME_LENGTH = BUFFER_SIZE - 50
+    VERSION = 1
 
     def initialize(secret, totalNumberOfPieces, requiredPiecesToDecode)
       @secret = secret
@@ -33,14 +35,21 @@ module Hiss
 
     # Process a secret file and generate an output file per piece
     # Format:
-    # pieceIndex\n (text)
-    # prime\n      (text)
+    # version\n          (text)
+    # pieceIndex\n       (text)
+    # prime\n            (text)
+    # originalFilename\n (text)
     # raw binary data
     def self.generate_file(secretFile, totalPieces, requiredPieces, prime)
       pieceNames = nil
       pieceFiles = nil
       secretFilePath = Pathname.new(secretFile)
-      chunks = secretFilePath.basename.to_s().split(/\./)
+      secretFilename = secretFilePath.basename.to_s()
+      if secretFilename.length > MAX_SECRET_FILENAME_LENGTH
+        raise "Filename too long: #{secretFilename}"
+      end
+
+      chunks = secretFilename.split(/\./)
       basename = if chunks.length == 1
                    chunks[0]
                  else
@@ -66,8 +75,10 @@ module Hiss
             }.each_with_index do |generatedBuffer, index|
               outputStream = pieceFiles[index]
               if firstChunk
+                outputStream.write("#{VERSION}\n")                   # version
                 outputStream.write("#{generatedBuffer[0].to_s()}\n") # index
                 outputStream.write("#{prime.to_s()}\n")              # prime
+                outputStream.write("#{secretFilename}\n")            # original filename
               end
               outputStream.write(generatedBuffer[1])                 # raw data
             end
@@ -145,28 +156,50 @@ module Hiss
       indices = []
       primes = []
       buffers = []
+      filenames = []
+      versions = []
+
       pieces.each do |piece|
-        header = piece.read(BUFFER_SIZE).split("\n", 3)
-        indices << header[0].strip().to_i()
-        primes << header[1].strip().to_i()
-        trailing_buffer = piece.read(BUFFER_SIZE - header[2].length)
-        header[2] += trailing_buffer if trailing_buffer
-        buffers << header[2]
+        header = piece.read(BUFFER_SIZE).split("\n", 5)
+        if header.length < 5
+          raise "Malformed header in input file"
+        end
+
+        versions << header[0].strip().to_i()
+        indices << header[1].strip().to_i()
+        primes << header[2].strip().to_i()
+        filenames << header[3].strip()
+        trailing_buffer = piece.read(BUFFER_SIZE - header[4].length)
+        header[4] += trailing_buffer if trailing_buffer
+        buffers << header[4]
       end
 
-      validate_header(indices, primes, buffers)
+      validate_header(versions, indices, primes, buffers, filenames)
 
-      return indices, primes, buffers
+      return indices, primes, buffers, filenames[0]
     end
 
-    def self.validate_header(indices, primes, buffers)
+    def self.validate_header(versions, indices, primes, buffers, filenames)
+      invalidVersions = versions.detect{ |version| version != VERSION }
+      if invalidVersions
+        raise "Invalid versions for input files #{invalidVersions}"
+      end
       if indices.uniq() != indices
         raise "Duplicate indices #{indices - indices.uniq()} in input files"
       end
       if primes.uniq().length != 1
         raise "Input files have differing prime modulators #{primes.uniq()}"
       end
-      #TODO: Anything for buffers?
+      if filenames.uniq().length != 1
+        raise "Input files have differing original filenames #{filenames.uniq()}"
+      end
+      tooLongFilenames = filenames.detect{ |filename| filename.length > MAX_SECRET_FILENAME_LENGTH }
+      if tooLongFilenames
+        raise "Original filenames are too long #{tooLongFilenames}"
+      end
+      if buffers.any?{ |buffer| (buffer.length % 2) != 0 }
+        raise "Input buffer has invalid (odd) length"
+      end
     end
 
     def self.validate_piece_files(filenames)
@@ -176,11 +209,14 @@ module Hiss
 
     # Solve for each value encoded in a set of files and write a file built from the solution
     # See generate_file for format
-    def self.interpolate_file(pieceFiles, destinationFile)
-      File.open(destinationFile, 'wb') do |destination|
+    def self.interpolate_file(pieceFiles, destinationDirectory)
+      pieces = nil
+      outputFile = nil
+      begin
         pieces = pieceFiles.collect{ |file| File.open(file, 'rb') }
-        begin
-          indices, primes, buffers = read_headers(pieces)
+        indices, primes, buffers, filename = read_headers(pieces)
+        outputFile = Pathname.new(destinationDirectory).join(filename).to_s()
+        File.open(outputFile, 'wb') do |destination|
           totalProgress = 0
 
           while buffers.all?{ |buffer| buffer }
@@ -191,10 +227,12 @@ module Hiss
             totalProgress += buffers[0].length
             pieces.each_index{ |index| buffers[index] = pieces[index].read(BUFFER_SIZE, buffers[index]) }
           end
-        ensure
-          pieces.each{ |file| file.close() }
         end
+      ensure
+        pieces.each{ |file| file.close() }
       end
+
+      return outputFile
     end
 
     # Solve for each value encoded in strings and return a string built from the solutions
