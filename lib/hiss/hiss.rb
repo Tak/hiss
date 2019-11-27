@@ -54,6 +54,7 @@ module Hiss
           parent.join("#{basename}-#{index}.shard").to_s()
         end
         pieceFiles = pieceNames.collect { |file| File.open(file, 'wb')}
+        totalProgress = 0
 
         File.open(secretFile, 'rb') do |secretStream|
           firstChunk = true
@@ -61,7 +62,7 @@ module Hiss
 
           while secretStream.read(BUFFER_SIZE, buffer)
             Hiss.generate_string(buffer, totalPieces, requiredPieces, prime){ |progress|
-              yield progress if block_given?
+              yield totalProgress + progress if block_given?
             }.each_with_index do |generatedBuffer, index|
               outputStream = pieceFiles[index]
               if firstChunk
@@ -71,6 +72,7 @@ module Hiss
               outputStream.write(generatedBuffer[1])                 # raw data
             end
             firstChunk = false
+            totalProgress += buffer.length
           end
         end
       ensure
@@ -179,12 +181,14 @@ module Hiss
         pieces = pieceFiles.collect{ |file| File.open(file, 'rb') }
         begin
           indices, primes, buffers = read_headers(pieces)
+          totalProgress = 0
 
           while buffers.all?{ |buffer| buffer }
             points = (1..buffers.length).collect{ |index| [indices[index - 1], buffers[index - 1]]}
             destination.write(interpolate_string(points, primes[0]){ |progress|
-              yield progress if block_given?
+              yield totalProgress + progress if block_given?
             })
+            totalProgress += buffers[0].length
             pieces.each_index{ |index| buffers[index] = pieces[index].read(BUFFER_SIZE, buffers[index]) }
           end
         ensure

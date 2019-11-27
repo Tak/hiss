@@ -109,13 +109,19 @@ RSpec.describe Hiss do
     numberOfPieces = 8
     requiredPiecesToDecode = 5
     prime = 5717
+    lastProgress = 0
 
     pieces = Hiss::Hiss.generate_buffer(secret, numberOfPieces, requiredPiecesToDecode, prime) do |progress|
+      expect(progress).to be >= lastProgress
       yield progress if block_given?
+      lastProgress = progress
     end
 
+    lastProgress = 0
     return Hiss::Hiss.interpolate_buffer(n_random_items_from(pieces, requiredPiecesToDecode), prime) do |progress|
+      expect(progress).to be >= lastProgress
       yield progress if block_given?
+      lastProgress = progress
     end
   end
 
@@ -128,14 +134,20 @@ RSpec.describe Hiss do
   def roundtrip_string(secret)
     numberOfPieces = 8
     requiredPiecesToDecode = 5
+    lastProgress = 0
 
     hiss = Hiss::Hiss.new(secret, numberOfPieces, requiredPiecesToDecode)
     pieces, prime = hiss.generate() do |progress|
+      expect(progress).to be >= lastProgress
       yield progress if block_given?
+      lastProgress = progress
     end
 
+    lastProgress = 0
     return Hiss::Hiss.interpolate_string(n_random_items_from(pieces, requiredPiecesToDecode), prime) do |progress|
+      expect(progress).to be >= lastProgress
       yield progress if block_given?
+      lastProgress = progress
     end
   end
 
@@ -193,9 +205,20 @@ RSpec.describe Hiss do
     requiredPieces = 8
     prime = 5717
     progressCallbacks = 0
+    lastProgress = 0
 
-    pieces = Hiss::Hiss.generate_file(inputPath.to_s(), totalPieces, requiredPieces, prime){ progressCallbacks += 1 }
-    Hiss::Hiss.interpolate_file(pieces, outputPath.to_s()){ progressCallbacks += 1 }
+    pieces = Hiss::Hiss.generate_file(inputPath.to_s(), totalPieces, requiredPieces, prime) do |progress|
+      expect(progress).to be >= lastProgress
+      progressCallbacks += 1
+      lastProgress = progress
+    end
+
+    lastProgress = 0
+    Hiss::Hiss.interpolate_file(pieces, outputPath.to_s()) do |progress|
+      expect(progress).to be >= lastProgress
+      progressCallbacks += 1
+      lastProgress = progress
+    end
 
     expect(progressCallbacks).to eq(inputPath.size * 2)
   end
