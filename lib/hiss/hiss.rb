@@ -155,7 +155,18 @@ module Hiss
     end
 
     def self.validate_header(indices, primes, buffers)
-      # TODO
+      if indices.uniq() != indices
+        raise "Duplicate indices #{indices - indices.uniq()} in input files"
+      end
+      if primes.uniq().length != 1
+        raise "Input files have differing prime modulators #{primes.uniq()}"
+      end
+      #TODO: Anything for buffers?
+    end
+
+    def self.validate_piece_files(filenames)
+      sizes = filenames.collect{ |file| Pathname.new(file).size }.uniq()
+      raise "Mismatching file sizes #{sizes}" if sizes.length > 1
     end
 
     # Solve for each value encoded in a set of files and write a file built from the solution
@@ -189,8 +200,15 @@ module Hiss
       }.pack(PACK_FORMAT)
     end
 
+    def self.validate_buffers(buffers)
+      raise "Malformed buffer input #{buffers}" if buffers.any?{ |buffer| buffer.length != 2 }
+      lengths = buffers.collect{ |buffer| buffer[1].length }.uniq()
+      raise "Differing buffer lengths #{lengths}" if lengths.length > 1
+    end
+
     # Solve for each set of points in points and return an ordered array of solutions
     def self.interpolate_buffer(points, prime)
+      validate_buffers(points)
       pointCount = points[0][1].length
       (1..pointCount).collect do |index|
         yield index - 1 if block_given?
@@ -198,9 +216,15 @@ module Hiss
       end
     end
 
+    def self.validate_points(points, prime)
+      raise "Insufficient number of inputs (#{points.length})" if points.length < 3
+      raise "Prime #{prime} must be greater than all values #{points}}" if points.any?{ |point| point[1] >= prime }
+    end
+
     # Solve for the 0th-order term of the lagrange polynomial partially described by points
     # in the prime finite field for prime
     def self.interpolate_secret(points, prime)
+      validate_points(points, prime)
       x_values = points.collect{ |point| point[0] }
       y_values = points.collect{ |point| point[1] }
       numerators = []

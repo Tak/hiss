@@ -158,4 +158,31 @@ RSpec.describe Hiss do
     roundtrip_string(secret){ progressCallbacks+=1 }
     expect(progressCallbacks).to eq(secret.length * 2)
   end
+
+  it "validates single inputs" do
+    testData = [
+        [[[1, 1], [2, 2]], 5717],                    # Not enough points
+        [[[1, 50001], [2, 20000], [3, 30000]], 5717] # Prime too small for y-values
+    ]
+    testData.each{ |testDatum|
+      expect{ Hiss::Hiss.interpolate_secret(testDatum[0], testDatum[1]) }.to raise_exception(RuntimeError)
+    }
+  end
+
+  it "validates buffers" do
+    secret = (1..32).collect{ Random.rand(256) }
+    prime = 5717
+    buffers = Hiss::Hiss.generate_buffer(secret, 5, 3, prime)
+    malformedBuffer = buffers.collect{ |buffer| buffer.clone() }
+    malformedBuffer[0].slice!(1)
+    mismatchingBuffer = buffers.collect{ |buffer| buffer.clone() }
+    mismatchingBuffer[0][1].slice!(1)
+    testData = [
+        malformedBuffer,      # Malformed input
+        mismatchingBuffer     # Mismatching lengths
+    ]
+    testData.each{ |testDatum|
+      expect{ Hiss::Hiss.interpolate_buffer(testDatum, prime) }.to raise_exception(RuntimeError)
+    }
+  end
 end
