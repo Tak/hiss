@@ -9,7 +9,9 @@ However, feel free to have fun with it!
 ## Installation
 
 - Clone this repository
-- Run `bundle install`
+- [Install ruby](https://www.ruby-lang.org/en/downloads)
+- Install bundler: Open a terminal and run the command `gem install bundler`
+- Run `bundle install` from the `hiss` directory
 
 ## Usage
 
