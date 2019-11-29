@@ -14,10 +14,26 @@ module Hiss
       @builder['boxReconstructTextSecret'].hide()
       @builder['frameResultsFile'].hide()
       @builder['frameReconstructFileResults'].hide()
+      @builder['mainInfoBar'].hide()
     end
 
     def ui_quit
       Gtk.main_quit()
+    end
+
+    def self.flush_events
+      while Gtk.events_pending?
+        Gtk.main_iteration()
+      end
+    end
+
+    def ui_display_error(message, error)
+      @builder['labelError'].text = "#{message}: #{error}"
+      @builder['mainInfoBar'].show()
+    end
+
+    def ui_clear_errors
+      @builder['mainInfoBar'].hide()
     end
 
     ### Generate Text ###
@@ -27,7 +43,7 @@ module Hiss
       totalPieces = @builder['spinnerTotalPiecesText'].value
       requiredPieces = @builder['spinnerRequiredPiecesText'].value
       @builder['buttonGenerateText'].sensitive = !secret.empty? && totalPieces >= requiredPieces
-      UI.clear_grid(@builder['gridResultText'])
+      @builder['frameResultsText'].hide()
     end
 
     def get_selectable_label(text, horizontal_alignment)
@@ -43,33 +59,36 @@ module Hiss
       end
     end
 
-    def self.flush_events
-      while Gtk.events_pending?
-        Gtk.main_iteration()
-      end
-    end
-
     def ui_generate_text
       secret = @builder['entrySecretText'].text
       totalPieces = @builder['spinnerTotalPiecesText'].value
       requiredPieces = @builder['spinnerRequiredPiecesText'].value
       progressBar = @builder['progressText']
       totalProgress = secret.length
+      generateButton = @builder['buttonGenerateText']
 
-      pieces, prime = Hiss.new(secret, totalPieces, requiredPieces).generate() do |progress|
-        progressBar.fraction = progress.to_f() / totalProgress
-        UI.flush_events()
+      ui_clear_errors()
+      generateButton.sensitive = false
+
+      begin
+        pieces, prime = Hiss.new(secret, totalPieces, requiredPieces).generate() do |progress|
+          progressBar.fraction = progress.to_f() / totalProgress
+          UI.flush_events()
+        end
+        @builder['labelPrimeText'].text = prime.to_s()
+        grid = @builder['gridResultText']
+        UI.clear_grid(grid)
+        pieces.each_with_index do |piece, index|
+          grid.insert_row(index)
+          grid.attach(get_selectable_label(piece[0].to_s(), 1.0), 0, index, 1, 1)
+          grid.attach(get_selectable_label(Base64.urlsafe_encode64(piece[1]), 0.25), 1, index, 1, 1)
+        end
+        progressBar.fraction = 1.0
+        @builder['frameResultsText'].show_all()
+      rescue => error
+        ui_display_error('Error generating shards', error)
       end
-      @builder['labelPrimeText'].text = prime.to_s()
-      grid = @builder['gridResultText']
-      UI.clear_grid(grid)
-      pieces.each_with_index do |piece, index|
-        grid.insert_row(index)
-        grid.attach(get_selectable_label(piece[0].to_s(), 1.0), 0, index, 1, 1)
-        grid.attach(get_selectable_label(Base64.urlsafe_encode64(piece[1]), 0.25), 1, index, 1, 1)
-      end
-      progressBar.fraction = 1.0
-      @builder['frameResultsText'].show_all()
+      generateButton.sensitive = true
     end
 
     ### Reconstruct Text ###
@@ -139,13 +158,18 @@ module Hiss
       end
       totalProgress = pieces[0][1].length
 
-      secret = Hiss.interpolate_string(pieces, prime) do |progress|
-        progressBar.fraction = progress.to_f() / totalProgress
-        UI.flush_events()
+      begin
+        ui_clear_errors()
+        secret = Hiss.interpolate_string(pieces, prime) do |progress|
+          progressBar.fraction = progress.to_f() / totalProgress
+          UI.flush_events()
+        end
+        progressBar.fraction = 1.0
+        @builder['labelReconstructTextSecret'].text = secret
+        @builder['boxReconstructTextSecret'].show_all()
+      rescue => error
+        ui_display_error('Error reconstructing text', error)
       end
-      progressBar.fraction = 1.0
-      @builder['labelReconstructTextSecret'].text = secret
-      @builder['boxReconstructTextSecret'].show_all()
     end
 
     ### Generate File ###
@@ -170,8 +194,11 @@ module Hiss
       totalPieces = @builder['spinnerTotalPiecesFile'].value
       requiredPieces = @builder['spinnerRequiredPiecesFile'].value
       progressBar = @builder['progressFile']
+      generateButton = @builder['buttonGenerateFile']
 
       begin
+        ui_clear_errors()
+        generateButton.sensitive = false
         secretFile = @builder['buttonChooseSecretFile'].file
         parent = secretFile.parent
         totalProgress = Pathname.new(secretFile.path).size
@@ -185,20 +212,31 @@ module Hiss
         # Done generating, show results
         @fileResultPath = parent.uri
         @builder['frameResultsFile'].show_all()
+      rescue => error
+        ui_display_error('Error generating shards', error)
       ensure
         secretFile.unref() if secretFile
         parent.unref() if parent
       end
+      generateButton.sensitive = true
     end
 
     def ui_open_file
-      Gio.app_info_launch_default_for_uri(@fileResultPath)
+      begin
+        Gio.app_info_launch_default_for_uri(@fileResultPath)
+      rescue => error
+        ui_display_error("Error opening #{@fileResultPath}", error)
+      end
     end
 
     ### Reconstruct File ###
 
     def ui_open_reconstruct_file
+      begin
       Gio.app_info_launch_default_for_uri("file://#{@fileReconstructedPath}")
+      rescue => error
+        ui_display_error("Error opening #{@fileReconstructedPath}", error)
+      end
     end
 
     def ui_validate_reconstruct_file
@@ -227,8 +265,11 @@ module Hiss
     def ui_reconstruct_file
       destination = nil
       pieces = nil
+      reconstructButton = @builder['buttonReconstructFile']
 
       begin
+        ui_clear_errors()
+        reconstructButton.sensitive = false
         pieceFiles = @builder['chooserReconstructFileChoosePieces'].files
         progressBar = @builder['progressReconstructFile']
         destination = pieceFiles[0].parent
@@ -242,10 +283,13 @@ module Hiss
         progressBar.fraction = 1.0
 
         @builder['frameReconstructFileResults'].show_all()
+      rescue => error
+        ui_display_error('Error reconstructing file', error)
       ensure
         destination.unref() if destination
         pieceFiles.each { |piece| piece.unref() } if pieceFiles
       end
+      reconstructButton.sensitive = true
     end
   end
 end
