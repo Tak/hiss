@@ -111,10 +111,16 @@ module Hiss
 
       grid = @builder['gridReconstructTextPieces']
       pieces = @builder['spinnerReconstructTextPieces'].value
-      button.sensitive = (1..pieces).none? do |index|
-        grid.get_child_at(0, index - 1).text.strip().to_i() == 0 || # Index is non-numeric
-        grid.get_child_at(1, index - 1).text.strip().empty?         # Shard is empty
+      begin
+        valid = (1..pieces).none? do |index|
+          grid.get_child_at(0, index - 1).text.strip().to_i() == 0 ||                  # Index is non-numeric
+          Base64.urlsafe_decode64(grid.get_child_at(1, index - 1).text.strip()).empty? # Shard is invalid
+        end
+      rescue
+        valid = false
       end
+
+      button.sensitive = valid
     end
 
     def ui_reconstruct_text
