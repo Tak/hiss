@@ -74,16 +74,18 @@ module Hiss
 
     ### Reconstruct Text ###
 
-    def self.get_index_entry
+    def get_index_entry
       entry = Gtk::Entry.new()
       entry.placeholder_text = 'Index'
       entry.input_purpose = Gtk::InputPurpose::DIGITS
+      entry.signal_connect(:changed){ ui_validate_reconstruct_text() }
       return entry
     end
 
-    def self.get_piece_entry
+    def get_piece_entry
       entry = Gtk::Entry.new()
       entry.placeholder_text = 'Secret shard'
+      entry.signal_connect(:changed){ ui_validate_reconstruct_text() }
       return entry
     end
 
@@ -93,8 +95,8 @@ module Hiss
       pieces = @builder['spinnerReconstructTextPieces'].value
       (1..pieces).each do |index|
         grid.insert_row(index - 1)
-        grid.attach(UI.get_index_entry(), 0, index - 1, 1, 1)
-        grid.attach(UI.get_piece_entry(), 1, index - 1, 1, 1)
+        grid.attach(get_index_entry(), 0, index - 1, 1, 1)
+        grid.attach(get_piece_entry(), 1, index - 1, 1, 1)
       end
       grid.show_all()
       ui_validate_reconstruct_text()
