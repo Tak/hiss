@@ -234,7 +234,7 @@ RSpec.describe Hiss do
 
   it "validates single inputs" do
     testData = [
-        [[[1, 1], [2, 2]], 5717],                    # Not enough points
+        [[[1, 1]], 5717],                            # Not enough points
         [[[1, 50001], [2, 20000], [3, 30000]], 5717] # Prime too small for y-values
     ]
     testData.each{ |testDatum|

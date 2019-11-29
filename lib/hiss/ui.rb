@@ -206,7 +206,7 @@ module Hiss
 
       begin
         pieces = @builder['chooserReconstructFileChoosePieces'].files
-        valid = true if pieces && pieces.length > 2
+        valid = true if pieces && pieces.length > 1
         @builder['buttonReconstructFile'].sensitive = valid
         @builder['buttonReconstructFileChoosePieces'].label = "(#{pieces.length} files)" if pieces && pieces.length > 0
       ensure

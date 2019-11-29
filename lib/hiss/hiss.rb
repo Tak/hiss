@@ -262,7 +262,7 @@ module Hiss
     end
 
     def self.validate_points(points, prime)
-      raise "Insufficient number of inputs (#{points.length})" if points.length < 3
+      raise "Insufficient number of inputs (#{points.length})" if points.length < 2
       raise "Prime #{prime} must be greater than all values #{points}}" if points.any?{ |point| point[1] >= prime }
     end
 
