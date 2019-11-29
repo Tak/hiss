@@ -6,6 +6,9 @@ Hiss is a toy implementation of [Shamir's Secret Sharing](https://en.wikipedia.o
 
 However, feel free to have fun with it!
 
+![Generating keys from a file](https://raw.githubusercontent.com/Tak/hiss/master/images/generate.png)
+![Reconstructing a file](https://raw.githubusercontent.com/Tak/hiss/master/images/reconstruct.png)
+
 ## Installation
 
 - Clone this repository
