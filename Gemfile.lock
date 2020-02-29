@@ -40,7 +40,7 @@ GEM
       cairo-gobject (= 3.4.1)
       gobject-introspection (= 3.4.1)
     pkg-config (1.4.0)
-    rake (10.5.0)
+    rake (13.0.1)
     rspec (3.8.0)
       rspec-core (~> 3.8.0)
       rspec-expectations (~> 3.8.0)
@@ -61,7 +61,7 @@ PLATFORMS
 DEPENDENCIES
   bundler (~> 1.17)
   hiss!
-  rake (~> 10.0)
+  rake (~> 13.0)
   rspec (~> 3.0)
 
 BUNDLED WITH
